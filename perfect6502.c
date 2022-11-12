@@ -20,11 +20,15 @@
  THE SOFTWARE.
  */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include "types.h"
 #include "netlist_sim.h"
 /* nodes & transistors */
 #include "netlist_6502.h"
+
+void
+chipStatus(void *state);
 
 /************************************************************
  *
@@ -163,6 +167,44 @@ step(void *state)
 	cycle++;
 }
 
+//RDY,WE,DI,IRQ
+const unsigned char stimuli[][2] = {
+    {1,1},
+    {1,1},
+    {1,1},
+    {1,1},
+    {1,1},
+    {0,1},
+    {0,1},
+    {0,1},
+    {0,1},
+    {0,1},
+    {0,1},
+    {0,1},
+    {1,1},
+    {1,1},
+    {1,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {0,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+    {1,0},
+};
+
 void *
 initAndResetChip()
 {
@@ -193,9 +235,39 @@ initAndResetChip()
 	setNode(state, res, 1);
 	recalcNodeList(state);
 
-	cycle = 0;
+    memory[0xfffc] = 0xf7;
+    memory[0xfffd] = 0x88;
+    memory[0x88f7] = 0x58;
+    memory[0x88f8] = 0xad;
+    memory[0x88f9] = 0x12;
+    memory[0x88fa] = 0xd0;
+    memory[0x88fb] = 0xc9;
+    memory[0x88fc] = 0x92;
+    memory[0x88fd] = 0xd0;
+    memory[0x88fe] = 0xf9;
 
-	return state;
+    /* Wait 8 cycles */
+    for (int i = 0; i < 16; i++) {
+        step(state);
+    }
+
+    cycle = 127;
+    for (int idx = 0; idx < 34; idx++) {
+        setNode(state, clk0, 0);
+        recalcNodeList(state);
+
+        setNode(state, rdy, stimuli[idx][0]);
+        setNode(state, irq, stimuli[idx][1]);
+        setNode(state, clk0, 1);
+        handleMemory(state);
+        recalcNodeList(state);
+        chipStatus(state);
+        cycle++;
+    };
+
+    exit(0);
+
+    return state;
 }
 
 void
@@ -217,17 +289,20 @@ chipStatus(void *state)
 	uint16_t a = readAddressBus(state);
 	uint8_t d = readDataBus(state);
 	BOOL r_w = isNodeHigh(state, rw);
+	BOOL state_rdy = isNodeHigh(state, rdy);
+	BOOL state_irq = isNodeHigh(state, irq);
+	BOOL state_sync = isNodeHigh(state, sync);
 
-	printf("halfcyc:%d phi0:%d AB:%04X D:%02X RnW:%d PC:%04X A:%02X X:%02X Y:%02X SP:%02X P:%02X IR:%02X",
-		   cycle,
-		   clk,
-		   a,
-		   d,
-		   r_w,
+    printf("cyc:%d AB:%04X RDY:%d SYNC:%d WE:%d D:%02X IRQ:%d PC:%04X A:%02X SP:%02X P:%02X IR:%02X",
+           cycle,
+           a,
+           state_rdy,
+           state_sync,
+           !r_w,
+           d,
+           state_irq,
 		   readPC(state),
 		   readA(state),
-		   readX(state),
-		   readY(state),
 		   readSP(state),
 		   readP(state),
 		   readIR(state));
